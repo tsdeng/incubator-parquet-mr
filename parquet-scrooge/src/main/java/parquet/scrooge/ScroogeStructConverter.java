@@ -34,6 +34,8 @@ import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
+import parquet.Log;
+
 import static parquet.thrift.struct.ThriftField.Requirement;
 import static parquet.thrift.struct.ThriftField.Requirement.*;
 
@@ -44,6 +46,7 @@ import static parquet.thrift.struct.ThriftField.Requirement.*;
  * @author Tianshuo Deng
  */
 public class ScroogeStructConverter {
+      private static final Log LOG = Log.getLog(ScroogeStructConverter.class);
 
   /**
    * convert a given scrooge generated class to {@link ThriftType.StructType}
@@ -79,6 +82,7 @@ public class ScroogeStructConverter {
     List<ThriftField> children = new LinkedList<ThriftField>();//{@link ThriftType.StructType} uses foreach loop to iterate the children, yields O(n) time for linked list
     Iterable<ThriftStructFieldInfo> scroogeFields = getFieldInfos(companionObject);
     for (ThriftStructFieldInfo field : scroogeFields) {
+	LOG.info("converting "+ field.tfield().toString());
       children.add(toThriftField(field));
     }
 
