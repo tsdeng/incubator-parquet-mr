@@ -201,6 +201,10 @@ struct ListNestSet {
    6: list<list<set<Address>>> lls
 }
 
+struct ListNestEnum {
+   1: required list<Operation> rle
+}
+
 struct MapNestMap {
   1: required map<map<Phone, Address>, map<Address, Phone>> rmm
   2: required map<map<map<Phone,Address>, Address>, map<Address, Phone>> rmmm

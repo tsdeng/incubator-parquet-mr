@@ -114,6 +114,11 @@ public class ScroogeStructConverterTest {
   }
 
   @Test
+  public void testConvertListNestEnum() throws Exception {
+    shouldConvertConsistentlyWithThriftStructConverter(ListNestEnum.class);
+  }
+
+  @Test
   public void testConvertMapNestList() throws Exception {
     shouldConvertConsistentlyWithThriftStructConverter(MapNestList.class);
   }

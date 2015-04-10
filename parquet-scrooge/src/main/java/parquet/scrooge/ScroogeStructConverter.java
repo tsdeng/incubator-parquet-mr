@@ -299,6 +299,8 @@ public class ScroogeStructConverter {
       ThriftField valueField = generateFieldWithoutId(name + "_map_value", requirement, valueType);
 
       return new ThriftType.MapType(keyField, valueField);
+    } else if (com.twitter.scrooge.ThriftEnum.class.isAssignableFrom(typeClass.runtimeClass())){
+      return convertEnumTypeField(typeClass.runtimeClass(), name);
     } else {
       return convertStructFromClass(typeClass.runtimeClass());
     }
@@ -338,9 +340,12 @@ public class ScroogeStructConverter {
   }
 
   public ThriftType convertEnumTypeField(ThriftStructFieldInfo f) {
-    List<ThriftType.EnumValue> enumValues = new ArrayList<ThriftType.EnumValue>();
+    return convertEnumTypeField(f.manifest().runtimeClass(), f.tfield().name);
+  }
 
-    String enumName = f.manifest().runtimeClass().getName();
+  private ThriftType convertEnumTypeField(Class enumClass, String fieldName){
+    List<ThriftType.EnumValue> enumValues = new ArrayList<ThriftType.EnumValue>();
+    String enumName = enumClass.getName();
     try {
       List enumCollection = getEnumList(enumName);
       for (Object enumObj : enumCollection) {
@@ -349,10 +354,9 @@ public class ScroogeStructConverter {
         enumValues.add(new ThriftType.EnumValue(enumDesc.id, enumDesc.originalName));
       }
       return new ThriftType.EnumType(enumValues);
-    } catch (ReflectiveOperationException e) {
-      throw new ScroogeSchemaConversionException("Can not convert enum field " + f, e);
+    } catch (Exception e) {
+      throw new ScroogeSchemaConversionException("Can not convert enum field " + fieldName, e);
     }
-
   }
 
   private static class ScroogeEnumDesc {
