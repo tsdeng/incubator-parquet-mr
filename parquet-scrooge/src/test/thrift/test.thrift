@@ -169,6 +169,53 @@ struct TestFieldOfEnum{
 }
 
 struct StringAndBinary {
-  1: required string s;
-  2: required binary b;
+  1: required string s
+  2: required binary b
+}
+
+#fixture fox nested structures
+struct NestedList {
+  1: required list<list<Address>> ll
+  2: required list<list<list<Address>>> lll
+}
+
+struct ListNestMap {
+  1: required list<map<Phone, Address>> lm
+  2: required list<list<map<Phone, Address>>> llm
+}
+
+struct ListNestSet {
+   1: required list<set<Address>> ls
+   2: required list<list<set<Address>>> lls
+}
+
+struct MapNestMap {
+  1: required map<map<Phone, Address>, map<Address, Phone>> mm
+  2: required map<map<map<Phone,Address>, Address>, map<Address, Phone>> mmm
+}
+
+struct MapNestList {
+  1: required map<list<Phone>, list<Address>> ml
+  2: required map<list<list<Phone>>, list<list<Address>>> mll
+}
+
+struct MapNestSet {
+  1: required map<set<Phone>, set<Address>> ms
+  2: required map<set<set<Phone>>, set<set<Address>>> mss
+}
+
+struct SetNestSet {
+  1: required set<set<Address>> ss
+  2: required set<set<set<Address>>> sss
+}
+
+struct SetNestList {
+   1: required set<list<Address>> sl
+   2: required set<set<list<Address>>> ssl
+}
+
+struct SetNestMap {
+  1: required set<map<Phone, Address>> sm
+  2: required set<set<map<Phone, Address>>> ssm
+  3: required set<set<list<list<map<Phone, Address>>>>> ssllm
 }

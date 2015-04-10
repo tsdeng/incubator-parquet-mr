@@ -218,7 +218,7 @@ public class ScroogeStructConverter {
   }
 
   private ThriftType convertSetTypeField(ThriftStructFieldInfo f, Requirement requirement) {
-    ThriftType elementType = convertClassToThriftType(f.valueManifest().get().runtimeClass());
+    ThriftType elementType = convertClassToThriftType(f.tfield().name + "_set_elem", requirement, f.valueManifest().get());
     //Set only has one sub-field as element field, therefore using hard-coded 1 as fieldId,
     //it's the same as the solution used in ElephantBird
     ThriftField elementField = generateFieldWithoutId(f.tfield().name, requirement, elementType);
@@ -226,16 +226,16 @@ public class ScroogeStructConverter {
   }
 
   private ThriftType convertListTypeField(ThriftStructFieldInfo f, Requirement requirement) {
-    ThriftType elementType = convertClassToThriftType(f.valueManifest().get().runtimeClass());
-    ThriftField elementField = generateFieldWithoutId(f.tfield().name, requirement, elementType);
+    ThriftType elementType = convertClassToThriftType(f.tfield().name + "_list_elem", requirement, f.valueManifest().get());
+    ThriftField elementField = generateFieldWithoutId(f.tfield().name , requirement, elementType);
     return new ThriftType.ListType(elementField);
   }
 
   private ThriftType convertMapTypeField(ThriftStructFieldInfo f, Requirement requirement) {
-    ThriftType keyType = convertClassToThriftType(f.keyManifest().get().runtimeClass());
+    ThriftType keyType = convertClassToThriftType(f.tfield().name + "_map_key", requirement, f.keyManifest().get());
     ThriftField keyField = generateFieldWithoutId(f.tfield().name + "_map_key", requirement, keyType);
 
-    ThriftType valueType = convertClassToThriftType(f.valueManifest().get().runtimeClass());
+    ThriftType valueType = convertClassToThriftType(f.tfield().name + "_map_value", requirement, f.valueManifest().get());
     ThriftField valueField = generateFieldWithoutId(f.tfield().name + "_map_value", requirement, valueType);
 
     return new ThriftType.MapType(keyField, valueField);
@@ -258,28 +258,67 @@ public class ScroogeStructConverter {
    * In composite types,  such as the type of the key in a map, since we use reflection to get the type class, this method
    * does conversion based on the class provided.
    *
-   * @param typeClass
-   * @return
+   *
+   * @param name
+   * @param requirement
+   *@param typeClass  @return
    * @throws Exception
    */
-  private ThriftType convertClassToThriftType(Class typeClass) {
-    if (typeClass == boolean.class) {
+  private ThriftType convertClassToThriftType(String name, Requirement requirement, Manifest<?> typeClass) {
+    if (typeClass.runtimeClass() == boolean.class) {
       return new ThriftType.BoolType();
-    } else if (typeClass == byte.class) {
+    } else if (typeClass.runtimeClass() == byte.class) {
       return new ThriftType.ByteType();
-    } else if (typeClass == double.class) {
+    } else if (typeClass.runtimeClass() == double.class) {
       return new ThriftType.DoubleType();
-    } else if (typeClass == short.class) {
+    } else if (typeClass.runtimeClass() == short.class) {
       return new ThriftType.I16Type();
-    } else if (typeClass == int.class) {
+    } else if (typeClass.runtimeClass() == int.class) {
       return new ThriftType.I32Type();
-    } else if (typeClass == long.class) {
+    } else if (typeClass.runtimeClass() == long.class) {
       return new ThriftType.I64Type();
-    } else if (typeClass == String.class) {
+    } else if (typeClass.runtimeClass()== String.class) {
       return new ThriftType.StringType();
+    } else if (typeClass.runtimeClass() == scala.collection.Seq.class){
+      Manifest<?> a = typeClass.typeArguments().apply(0);
+      ThriftType elementType = convertClassToThriftType(name + "_list_elem", requirement, a);
+      ThriftField elementField = generateFieldWithoutId(fixNestListOrSetName(name) , requirement, elementType);
+      return new ThriftType.ListType(elementField);
+    } else if (typeClass.runtimeClass() == scala.collection.Set.class){
+      Manifest<?> a = typeClass.typeArguments().apply(0);
+      ThriftType elementType = convertClassToThriftType(name + "_set_elem", requirement, a);
+      ThriftField elementField = generateFieldWithoutId(fixNestListOrSetName(name), requirement, elementType);
+      return new ThriftType.SetType(elementField);
+    } else if (typeClass.runtimeClass() == scala.collection.Map.class){
+      List<Manifest<?>> ms = JavaConversions.seqAsJavaList(typeClass.typeArguments());
+
+      ThriftType keyType = convertClassToThriftType(name + "_map_key", requirement, ms.get(0));
+      ThriftField keyField = generateFieldWithoutId(name + "_map_key", requirement, keyType);
+
+      ThriftType valueType = convertClassToThriftType(name + "_map_value", requirement, ms.get(1));
+      ThriftField valueField = generateFieldWithoutId(name + "_map_value", requirement, valueType);
+
+      return new ThriftType.MapType(keyField, valueField);
     } else {
-      return convertStructFromClass(typeClass);
+      return convertStructFromClass(typeClass.runtimeClass());
     }
+  }
+
+  /**
+   * There is a bug/inconsistency in ThriftStructConverter:
+   * The field name of a nested list/set has the same name as its parent. for example:
+   *  1: required list<list<int>> lm
+   * the name of the inner list is lm, but is should be lm_list_elem.
+   *
+   * This bug/inconsistency does not affect the converted parquet schema because ThriftSchemaConverter ignores the name
+   * of inner list.
+   *
+   * Here in ScroogeStructConverter the same behavior is replicated to generate the same ThriftStruct with
+   * ThriftStructConverter
+   * @return
+   */
+  private String fixNestListOrSetName(String name) {
+    return name.replaceAll("_list_elem|_set_elem","");
   }
 
   private ThriftType convertStructTypeField(ThriftStructFieldInfo f) {
