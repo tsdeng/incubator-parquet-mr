@@ -129,38 +129,10 @@ public class ScroogeStructConverter {
     return fields;
   }
 
-  private boolean isUnion(Class klass){
-    for(Field f: klass.getDeclaredFields()) {
-         if (f.getName().equals("Union"))
-           return true;
-    }
-    return false;
-  }
 
-
-  private Requirement getRequirementType(ThriftStructFieldInfo f) {
-    if (f.isOptional() && !f.isRequired()) {
-      return OPTIONAL;
-    } else if (f.isRequired() && !f.isOptional()) {
-      return REQUIRED;
-    } else if (!f.isOptional() && !f.isRequired()) {
-      return DEFAULT;
-    } else {
-      throw new ScroogeSchemaConversionException("can not determine requirement type for : " + f.toString()
-              + ", isOptional=" + f.isOptional() + ", isRequired=" + f.isRequired());
-    }
-  }
 
   /**
-   * Convert thrift field in scrooge to ThriftField in parquet
-   * Use reflection to detect if a field is optional or required since scrooge does not provide requirement information
-   * in generated classes.
-   * This will not correctly recognize fields that are not specified with a requirement type eg.
-   * struct Address {
-   * 1: string street
-   * }
-   * street will be identified as "REQUIRED"
-   *
+   * Convert a field in scrooge to ThriftField in parquet
    * @param scroogeField
    * @return
    * @throws Exception
@@ -218,27 +190,41 @@ public class ScroogeStructConverter {
   }
 
   private ThriftType convertSetTypeField(ThriftStructFieldInfo f, Requirement requirement) {
-    ThriftType elementType = convertClassToThriftType(f.tfield().name + "_set_elem", requirement, f.valueManifest().get());
+    return convertSetTypeField(f.tfield().name, f.valueManifest().get(), requirement);
+  }
+
+  private ThriftType convertSetTypeField(String fieldName, Manifest<?> valueManifest, Requirement requirement) {
+    ThriftType elementType = convertClassToThriftType(fieldName + "_set_elem", requirement, valueManifest);
     //Set only has one sub-field as element field, therefore using hard-coded 1 as fieldId,
     //it's the same as the solution used in ElephantBird
-    ThriftField elementField = generateFieldWithoutId(f.tfield().name, requirement, elementType);
+    ThriftField elementField = generateFieldWithoutId(fixNestListOrSetName(fieldName), requirement, elementType);
     return new ThriftType.SetType(elementField);
   }
 
   private ThriftType convertListTypeField(ThriftStructFieldInfo f, Requirement requirement) {
-    ThriftType elementType = convertClassToThriftType(f.tfield().name + "_list_elem", requirement, f.valueManifest().get());
-    ThriftField elementField = generateFieldWithoutId(f.tfield().name , requirement, elementType);
+    return convertListTypeField(f.tfield().name, f.valueManifest().get(),requirement);
+  }
+
+  private ThriftType convertListTypeField(String fieldName, Manifest<?> valueManifest, Requirement requirement) {
+    ThriftType elementType = convertClassToThriftType(fieldName + "_list_elem", requirement, valueManifest);
+    ThriftField elementField = generateFieldWithoutId(fixNestListOrSetName(fieldName) , requirement, elementType);
     return new ThriftType.ListType(elementField);
   }
 
   private ThriftType convertMapTypeField(ThriftStructFieldInfo f, Requirement requirement) {
-    ThriftType keyType = convertClassToThriftType(f.tfield().name + "_map_key", requirement, f.keyManifest().get());
-    ThriftField keyField = generateFieldWithoutId(f.tfield().name + "_map_key", requirement, keyType);
+    return convertMapTypeField(f.tfield().name,f.keyManifest().get(), f.valueManifest().get(),requirement);
+  }
 
-    ThriftType valueType = convertClassToThriftType(f.tfield().name + "_map_value", requirement, f.valueManifest().get());
-    ThriftField valueField = generateFieldWithoutId(f.tfield().name + "_map_value", requirement, valueType);
+  private ThriftType convertMapTypeField(String fieldName, Manifest<?> keyManifest, Manifest<?> valueManifest, Requirement requirement) {
+
+    ThriftType keyType = convertClassToThriftType(fieldName + "_map_key", requirement, keyManifest);
+    ThriftField keyField = generateFieldWithoutId(fieldName + "_map_key", requirement, keyType);
+
+    ThriftType valueType = convertClassToThriftType(fieldName + "_map_value", requirement, valueManifest);
+    ThriftField valueField = generateFieldWithoutId(fieldName + "_map_value", requirement, valueType);
 
     return new ThriftType.MapType(keyField, valueField);
+
   }
 
   /**
@@ -281,24 +267,15 @@ public class ScroogeStructConverter {
       return new ThriftType.StringType();
     } else if (typeClass.runtimeClass() == scala.collection.Seq.class){
       Manifest<?> a = typeClass.typeArguments().apply(0);
-      ThriftType elementType = convertClassToThriftType(name + "_list_elem", requirement, a);
-      ThriftField elementField = generateFieldWithoutId(fixNestListOrSetName(name) , requirement, elementType);
-      return new ThriftType.ListType(elementField);
+      return convertListTypeField(name, a, requirement);
     } else if (typeClass.runtimeClass() == scala.collection.Set.class){
       Manifest<?> a = typeClass.typeArguments().apply(0);
-      ThriftType elementType = convertClassToThriftType(name + "_set_elem", requirement, a);
-      ThriftField elementField = generateFieldWithoutId(fixNestListOrSetName(name), requirement, elementType);
-      return new ThriftType.SetType(elementField);
+      return convertSetTypeField(name, a, requirement);
     } else if (typeClass.runtimeClass() == scala.collection.Map.class){
       List<Manifest<?>> ms = JavaConversions.seqAsJavaList(typeClass.typeArguments());
-
-      ThriftType keyType = convertClassToThriftType(name + "_map_key", requirement, ms.get(0));
-      ThriftField keyField = generateFieldWithoutId(name + "_map_key", requirement, keyType);
-
-      ThriftType valueType = convertClassToThriftType(name + "_map_value", requirement, ms.get(1));
-      ThriftField valueField = generateFieldWithoutId(name + "_map_value", requirement, valueType);
-
-      return new ThriftType.MapType(keyField, valueField);
+      Manifest keyManifest = ms.get(0);
+      Manifest valueManifest = ms.get(1);
+      return convertMapTypeField(name, keyManifest, valueManifest, requirement);
     } else if (com.twitter.scrooge.ThriftEnum.class.isAssignableFrom(typeClass.runtimeClass())){
       return convertEnumTypeField(typeClass.runtimeClass(), name);
     } else {
@@ -356,6 +333,28 @@ public class ScroogeStructConverter {
       return new ThriftType.EnumType(enumValues);
     } catch (Exception e) {
       throw new ScroogeSchemaConversionException("Can not convert enum field " + fieldName, e);
+    }
+  }
+
+  private boolean isUnion(Class klass){
+    for(Field f: klass.getDeclaredFields()) {
+      if (f.getName().equals("Union"))
+        return true;
+    }
+    return false;
+  }
+
+
+  private Requirement getRequirementType(ThriftStructFieldInfo f) {
+    if (f.isOptional() && !f.isRequired()) {
+      return OPTIONAL;
+    } else if (f.isRequired() && !f.isOptional()) {
+      return REQUIRED;
+    } else if (!f.isOptional() && !f.isRequired()) {
+      return DEFAULT;
+    } else {
+      throw new ScroogeSchemaConversionException("can not determine requirement type for : " + f.toString()
+              + ", isOptional=" + f.isOptional() + ", isRequired=" + f.isRequired());
     }
   }
 
